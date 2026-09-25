@@ -137,6 +137,7 @@ def register_listener(client: TelegramClient, group_configs: dict, post_action=F
             signal["index"],
             constants.SIGNALS_FILENAME
         )
+        logger.info("Signal content: %s", json.dumps(signal, ensure_ascii=False))
         if post_action:
             post_action(
                 f"Signal saved for Symbol={signal['symbol']}"

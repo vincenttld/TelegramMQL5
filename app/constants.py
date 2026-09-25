@@ -11,7 +11,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
-APP_VERSION = "6.2.2"
+APP_VERSION = "6.3.1"
 GITHUB_REPO = "vincenttld/TelegramMQL5"
 
 
@@ -81,9 +81,25 @@ with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
 MQL_DIR_PATH = data.get("MQL_DIR_PATH", "")
 SIGNALS_FILENAME = None
 if MQL_DIR_PATH:
-    files_dir = MQL_DIR_PATH.replace("Experts", "")
+    # L EA lit signals.json dans le dossier COMMON (partage entre tous les
+    # terminaux), pas dans le dossier MQL5\Files propre au terminal selectionne.
+    # Ce dossier est le frere "Common" du dossier <TERMINAL_ID> choisi par
+    # l utilisateur, ex: .../MetaQuotes/Terminal/<TERMINAL_ID> -> .../Terminal/Common
+    terminal_dir = os.path.normpath(MQL_DIR_PATH)
+    parts = terminal_dir.split(os.sep)
+    if "Terminal" in parts:
+        idx = len(parts) - 1 - parts[::-1].index("Terminal")
+        # os.sep.join (pas os.path.join) pour ne pas perdre le "\" apres le
+        # lecteur ("C:") — os.path.join("C:", "Users") donne "C:Users" (faux)
+        terminal_root = os.sep.join(parts[: idx + 1])
+        common_files_dir = os.path.join(terminal_root, "Common", "Files")
+    else:
+        # Repli si le dossier selectionne n a pas la structure attendue
+        common_files_dir = os.path.join(
+            os.getenv("APPDATA", ""), "MetaQuotes", "Terminal", "Common", "Files"
+        )
     SIGNALS_FILENAME = os.path.normpath(
-        os.path.join(files_dir, "Files", "signals.json")
+        os.path.join(common_files_dir, "signals.json")
     )
 
 

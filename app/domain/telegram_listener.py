@@ -128,6 +128,7 @@ def register_listener(client: TelegramClient, group_configs: dict, post_action=F
             signal["index"] = len(signals) + 1
             signals.append(signal)
 
+            os.makedirs(os.path.dirname(constants.SIGNALS_FILENAME), exist_ok=True)
             with open(constants.SIGNALS_FILENAME, "w", encoding="utf-8") as f:
                 json.dump(signals, f, indent=4)
 

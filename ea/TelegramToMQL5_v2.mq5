@@ -4,7 +4,7 @@
 //|                                           Version 2.00           |
 //+------------------------------------------------------------------+
 
-#define VERSION "3.0"
+#define VERSION "2.0"
 
 #property copyright "trolardv"
 #property version   VERSION
@@ -28,30 +28,12 @@ input int  max_trade = 2; // Nb de trades a ouvrir par signal (0 = 1 trade par T
 input int  max_tp = 1;    // Nb de trades qui recoivent un TP (0 = tous). Les trades au-dela sont des runners (TP=0 + BE)
 input string inpcomment = "TeleSignal"; // Comment
 input string symbol_suffix = ""; // Suffix à ajouter au symbole (ex: "-vip", ".m")
-input ulong  i_MagicNumber = 20260909; // Magic number — seules ces positions sont gérées/cloturées
-
-//+------------------------------------------------------------------+
-//| Vrai si la position/ordre selectionne appartient a cet EA        |
-//| (magic ET comment) — garde-fou avant toute cloture / BE          |
-//+------------------------------------------------------------------+
-bool PositionIsOurs()
-{
-   if(PositionGetInteger(POSITION_MAGIC) != (long)i_MagicNumber) return false;
-   return (StringFind(PositionGetString(POSITION_COMMENT), inpcomment) != -1);
-}
-
-bool OrderIsOurs()
-{
-   if(OrderGetInteger(ORDER_MAGIC) != (long)i_MagicNumber) return false;
-   return (StringFind(OrderGetString(ORDER_COMMENT), inpcomment) != -1);
-}
 
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
 int OnInit(){
    Print("Signal EA start");
-   trade.SetExpertMagicNumber(i_MagicNumber);
    ENUM_ACCOUNT_MARGIN_MODE mm = (ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE);
    if(mm != ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)
       Print("⚠️ Account is NETTING. One position per symbol only — multi-TP legs will MERGE into a single position. Use a HEDGING account for separate TP positions.");
@@ -69,7 +51,7 @@ int OnInit(){
 void OnTick(){
    ReadSignalsAndExecute();
    if(use_breakeven) ManageBreakEven();
-   Comment("Telegram to MQL5","\nVersion: " + VERSION, "\nMagic: " + IntegerToString(i_MagicNumber));
+   Comment("Telegram to MQL5","\nVersion: " + VERSION);
 }
 
 //+------------------------------------------------------------------+
@@ -116,10 +98,10 @@ void ReadSignalsAndExecute(){
    CJAVal root;
    string json_text;
    
-   int handle=FileOpen(filename, FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   int handle=FileOpen(filename, FILE_READ|FILE_TXT|FILE_ANSI);
    if(handle == INVALID_HANDLE){
       Print("❌ Cannot open file: ", filename);
-      Print("Error code ", GetLastError());
+      Print("Error code ", GetLastError()); 
       return;
    }
 
@@ -321,8 +303,8 @@ bool CloseAllTrades(string symbol)
 
       string pos_symbol = PositionGetString(POSITION_SYMBOL);
       if(symbol != "" && pos_symbol != symbol) continue;
-      // On ne touche qu'aux trades de cet EA (magic + comment)
-      if(!PositionIsOurs()) continue;
+      // On ne touche qu'aux trades issus des signaux Telegram
+      if(StringFind(PositionGetString(POSITION_COMMENT), inpcomment) == -1) continue;
 
       if(trade.PositionClose(ticket)){
          closed++;
@@ -343,7 +325,7 @@ bool CloseAllTrades(string symbol)
 
       string ord_symbol = OrderGetString(ORDER_SYMBOL);
       if(symbol != "" && ord_symbol != symbol) continue;
-      if(!OrderIsOurs()) continue;
+      if(StringFind(OrderGetString(ORDER_COMMENT), inpcomment) == -1) continue;
 
       if(trade.OrderDelete(ticket)){
          deleted++;
@@ -384,8 +366,8 @@ bool ApplyBreakEven(string symbol)
 
       string pos_symbol = PositionGetString(POSITION_SYMBOL);
       if(symbol != "" && pos_symbol != symbol) continue;
-      // On ne touche qu'aux trades de cet EA (magic + comment)
-      if(!PositionIsOurs()) continue;
+      // On ne touche qu'aux trades issus des signaux Telegram
+      if(StringFind(PositionGetString(POSITION_COMMENT), inpcomment) == -1) continue;
 
       matched++;
 
@@ -541,7 +523,6 @@ bool IsPositionOpenWithComment(string marker)
    {
       ulong t = PositionGetTicket(i);
       if(!PositionSelectByTicket(t)) continue;
-      if(PositionGetInteger(POSITION_MAGIC) != (long)i_MagicNumber) continue;
       if(StringFind(PositionGetString(POSITION_COMMENT), marker) != -1)
          return true;
    }
@@ -561,8 +542,8 @@ void ManageBreakEven()
       ulong ticket = PositionGetTicket(i);
       if(!PositionSelectByTicket(ticket)) continue;
 
-      if(!PositionIsOurs()) continue;
       string c = PositionGetString(POSITION_COMMENT);
+      if(StringFind(c, inpcomment) == -1) continue;
 
       long idx;
       int leg = ParseLeg(c, idx);
@@ -617,7 +598,6 @@ bool IsSignalAlreadyExecuted(string expected)
       ulong ticket = PositionGetTicket(i);
       if(!PositionSelectByTicket(ticket))
          continue;
-      if(PositionGetInteger(POSITION_MAGIC) != (long)i_MagicNumber) continue;
 
       string comment = PositionGetString(POSITION_COMMENT);
       if(StringFind(comment, expected) != -1)
@@ -630,7 +610,6 @@ bool IsSignalAlreadyExecuted(string expected)
       ulong ticket = OrderGetTicket(i);
       if(!OrderSelect(ticket))
          continue;
-      if(OrderGetInteger(ORDER_MAGIC) != (long)i_MagicNumber) continue;
 
       string comment = OrderGetString(ORDER_COMMENT);
       if(StringFind(comment, expected) != -1)
@@ -649,7 +628,6 @@ bool IsSignalAlreadyExecuted(string expected)
       ulong deal_ticket = HistoryDealGetTicket(i);
       if(deal_ticket == 0)
          continue;
-      if(HistoryDealGetInteger(deal_ticket, DEAL_MAGIC) != (long)i_MagicNumber) continue;
 
       string comment = HistoryDealGetString(deal_ticket, DEAL_COMMENT);
       if(StringFind(comment, expected) != -1)
@@ -695,7 +673,7 @@ void MarkSignalAsProcessed(int signal_index)
    CJAVal root;
    string json_text;
 
-   int handle = FileOpen(filename, FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   int handle = FileOpen(filename, FILE_READ|FILE_TXT|FILE_ANSI);
    if(handle == INVALID_HANDLE)
       return;
 
@@ -760,7 +738,7 @@ void MarkSignalAsProcessed(int signal_index)
    }
    json += "]";
 
-   handle = FileOpen(filename, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   handle = FileOpen(filename, FILE_WRITE|FILE_TXT|FILE_ANSI);
    if(handle == INVALID_HANDLE)
       return;
    FileWriteString(handle, json);

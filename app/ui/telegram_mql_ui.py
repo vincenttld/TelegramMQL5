@@ -134,7 +134,7 @@ class MainController(object):
     def select_folder(self):
         folder = QFileDialog.getExistingDirectory(
             parent=self.window,
-            caption="Select the MQL5 folder",
+            caption="Select the MetaTrader 5 Terminal folder",
             options=QFileDialog.ShowDirsOnly
         )
         if folder:

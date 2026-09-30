@@ -13,6 +13,8 @@ from app import constants
 from app.domain.logging import setup_logger
 from app.domain.exceptions import FailedParseMessage
 from app.domain.message_filter import MessageFilter
+from app.domain import telegram_notify
+from app.domain.model.order_model import OrderModel
 
 client_lock = asyncio.Lock()
 
@@ -138,6 +140,12 @@ def register_listener(client: TelegramClient, group_configs: dict, post_action=F
             constants.SIGNALS_FILENAME
         )
         logger.info("Signal content: %s", json.dumps(signal, ensure_ascii=False))
+        if telegram_notify.is_configured():
+            # Envoi bloquant -> dans un thread pour ne pas bloquer la boucle asyncio
+            await asyncio.to_thread(
+                telegram_notify.send_text,
+                format_signal_message(signal),
+            )
         if post_action:
             post_action(
                 f"Signal saved for Symbol={signal['symbol']}"
@@ -145,6 +153,22 @@ def register_listener(client: TelegramClient, group_configs: dict, post_action=F
 
     logger.info("Listening to groups: %s", list(group_configs.keys()))
     return handler
+
+
+def format_signal_message(signal):
+    """Signal #2 → Symbol=XAUUSD, Type=SELL, Entry=4210.00000000, SL=..., TPs=4207.0 4200.0 , Date: ..."""
+    head = "Signal #{} → Symbol={}".format(signal["index"], signal.get("symbol") or "ALL")
+    date = signal["date"]
+
+    action = signal.get("action")
+    if action != OrderModel.ACTION_OPEN:
+        return "{}, Action={}, Date: {}".format(head, action.upper(), date)
+
+    order_type = "BUY" if signal["type"] == OrderModel.ORDER_TYPE_BUY else "SELL"
+    tps = "".join("{} ".format(tp) for tp in signal["tp"])
+    return "{}, Type={}, Entry={:.8f}, SL={:.8f}, TPs={}, Date: {}".format(
+        head, order_type, float(signal["entry"]), float(signal["sl"]), tps, date
+    )
 
 
 def failed_error(post_action, event, error):

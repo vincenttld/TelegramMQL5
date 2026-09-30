@@ -4,7 +4,7 @@
 //|                                           Version 2.00           |
 //+------------------------------------------------------------------+
 
-#define VERSION "3.0"
+#define VERSION "3.1"
 
 #property copyright "trolardv"
 #property version   VERSION
@@ -29,6 +29,7 @@ input int  max_tp = 1;    // Nb de trades qui recoivent un TP (0 = tous). Les tr
 input string inpcomment = "TeleSignal"; // Comment
 input string symbol_suffix = ""; // Suffix à ajouter au symbole (ex: "-vip", ".m")
 input ulong  i_MagicNumber = 20260909; // Magic number — seules ces positions sont gérées/cloturées
+input int    i_PendingExpiryMinutes = 0; // Supprime un ordre en attente non déclenché après X min (0 = désactivé)
 
 //+------------------------------------------------------------------+
 //| Vrai si la position/ordre selectionne appartient a cet EA        |
@@ -69,6 +70,7 @@ int OnInit(){
 void OnTick(){
    ReadSignalsAndExecute();
    if(use_breakeven) ManageBreakEven();
+   if(i_PendingExpiryMinutes > 0) CheckPendingExpiry();
    Comment("Telegram to MQL5","\nVersion: " + VERSION, "\nMagic: " + IntegerToString(i_MagicNumber));
 }
 
@@ -292,10 +294,6 @@ void ReadSignalsAndExecute(){
             all_ok = false;
       }
 
-      // Notification Telegram uniquement si au moins une position/ordre est reellement passe
-      if(opened > 0)
-         SendMessage(msg + " | " + IntegerToString(opened) + "/" + IntegerToString(legs) + " leg(s) OK");
-
       if(all_ok){
          MarkSignalAsProcessed((int)index);
       }
@@ -359,9 +357,33 @@ bool CloseAllTrades(string symbol)
    string msg = "CLOSE signal (" + scope + ") → " + IntegerToString(closed) +
                 " position(s) fermee(s), " + IntegerToString(deleted) + " ordre(s) supprime(s)";
    Print(msg);
-   SendMessage(msg);
 
    return all_ok;
+}
+
+//+------------------------------------------------------------------+
+//| DELETE PENDING ORDERS OF THIS EA NOT TRIGGERED AFTER X MINUTES    |
+//+------------------------------------------------------------------+
+void CheckPendingExpiry()
+{
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = OrderGetTicket(i);
+      if(ticket == 0) continue;
+      if(!OrderSelect(ticket)) continue;
+      if(!OrderIsOurs()) continue;
+
+      datetime setup_time = (datetime)OrderGetInteger(ORDER_TIME_SETUP);
+      int age_minutes = (int)((TimeCurrent() - setup_time) / 60);
+      if(age_minutes < i_PendingExpiryMinutes) continue;
+
+      string ord_symbol = OrderGetString(ORDER_SYMBOL);
+      if(trade.OrderDelete(ticket))
+         Print("⏱️ Pending expiré (", age_minutes, " min) supprimé #", ticket, " ", ord_symbol);
+      else
+         Print("❌ Delete pending expiré #", ticket, " ", ord_symbol, " failed | ",
+               trade.ResultRetcode(), " ", trade.ResultRetcodeDescription());
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -429,8 +451,6 @@ bool ApplyBreakEven(string symbol)
                 " position(s) a BE, " + IntegerToString(pending) + " en attente (hors profit), " +
                 IntegerToString(failed) + " echec(s)";
    Print(msg);
-   if(moved > 0 || failed > 0) SendMessage(msg);
-
    // Signal termine seulement si plus rien a faire : aucune position hors profit, aucun echec.
    return (failed == 0 && pending == 0);
 }
@@ -767,20 +787,3 @@ void MarkSignalAsProcessed(int signal_index)
    FileClose(handle);
 }
 
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-void SendMessage(string Message){
-   char data[];
-   char res[];
-   string resHeaders;
-   
-   const string TG_API_URL = "https://api.telegram.org/";
-   const string chat_ID="";
-   string botTkn="";
-   const string url = TG_API_URL+"bot"+botTkn+"/sendmessage?chat_id="+chat_ID+"&text="+Message;
-   Print(Message);
-   
-   WebRequest("POST", url, "", 10000, data, res, resHeaders);
-}
-//+------------------------------------------------------------------+

@@ -11,19 +11,24 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
 
-async def show_update_available_dialog(parent, version: str, notes: str) -> bool:
+async def show_update_available_dialog(
+    parent, current_version: str, version: str, notes: str
+) -> bool:
     """Shows the update announcement dialog, returns True if the user accepts."""
     box = QMessageBox(parent)
     box.setWindowTitle("Update available")
     box.setIcon(QMessageBox.Information)
 
-    text = f"A new version ({version}) is available."
+    text = (
+        f"Update available {current_version} to {version}\n"
+        "Would you like to update ?"
+    )
     if notes:
         text += f"\n\n{notes}"
     box.setText(text)
 
-    update_btn = box.addButton("Update", QMessageBox.AcceptRole)
-    box.addButton("Later", QMessageBox.RejectRole)
+    update_btn = box.addButton("Yes", QMessageBox.AcceptRole)
+    box.addButton("No", QMessageBox.RejectRole)
 
     future = asyncio.get_event_loop().create_future()
 

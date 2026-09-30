@@ -31,6 +31,8 @@ api_hash = constants.config["telegram"]["api_hash"]
 
 logger = setup_logger(constants.LOG_FILE)
 
+UPDATE_CHECK_INTERVAL_SECONDS = 60 * 60
+
 
 class AppController(MainController):
     def __init__(self, ui_file):
@@ -41,6 +43,7 @@ class AppController(MainController):
         self.listener_task = None
         self.active_handler = None
         self.group_configs = {}
+        self._update_check_running = False
 
         logger.info(f"Session path: {constants.SESSION_PATH}")
 
@@ -183,7 +186,23 @@ class AppController(MainController):
     def logger_widget(self, msg):
         self.window.footerLog.setText(msg)
 
+    async def periodic_update_check(self):
+        """Check for updates every hour (the startup check is done separately)."""
+        while True:
+            await asyncio.sleep(UPDATE_CHECK_INTERVAL_SECONDS)
+            await self.check_for_updates()
+
     async def check_for_updates(self):
+        # Avoid stacking popups if a check is already in progress
+        if self._update_check_running:
+            return
+        self._update_check_running = True
+        try:
+            await self._check_for_updates()
+        finally:
+            self._update_check_running = False
+
+    async def _check_for_updates(self):
         loop = asyncio.get_event_loop()
         try:
             update_info = await loop.run_in_executor(None, updater.check_for_update)
@@ -195,7 +214,7 @@ class AppController(MainController):
             return
 
         accepted = await show_update_available_dialog(
-            self.window, update_info.version, update_info.notes
+            self.window, constants.APP_VERSION, update_info.version, update_info.notes
         )
         if not accepted:
             return
@@ -237,6 +256,7 @@ def main():
     # loop.create_task(controller.load_existing_session())
     loop.create_task(controller.initialize_ui())
     loop.create_task(controller.check_for_updates())
+    loop.create_task(controller.periodic_update_check())
 
     install_target = updater.get_pending_install_target(sys.argv)
     if install_target:

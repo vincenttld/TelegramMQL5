@@ -11,7 +11,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
-APP_VERSION = "6.3.2"
+APP_VERSION = "6.4.1"
 GITHUB_REPO = "vincenttld/TelegramMQL5"
 
 

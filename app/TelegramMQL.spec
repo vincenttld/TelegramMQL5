@@ -1,8 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
+import re
 from PyInstaller.utils.hooks import collect_submodules
 
 BASE_DIR = os.getcwd()
+
+# === Version (lue dans constants.py, sans l importer) ===
+with open(os.path.join(SPECPATH, 'constants.py'), encoding='utf-8') as f:
+    _match = re.search(r'^APP_VERSION\s*=\s*"(\d+)\.(\d+)', f.read(), re.M)
+if not _match:
+    raise ValueError("APP_VERSION introuvable dans constants.py")
+EXE_NAME = f"TelegramToMQL_v{_match.group(1)}_{_match.group(2)}"
 
 # === PySide6 (minimum nécessaire) ===
 hiddenimports = collect_submodules('PySide6')
@@ -33,7 +41,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='TelegramToMQL',
+    name=EXE_NAME,
     debug=False,
     strip=False,
     upx=True,

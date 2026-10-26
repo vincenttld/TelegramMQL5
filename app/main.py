@@ -203,6 +203,10 @@ class AppController(MainController):
             self._update_check_running = False
 
     async def _check_for_updates(self):
+        if not updater.is_frozen():
+            # From sources there is no exe to replace
+            return
+
         loop = asyncio.get_event_loop()
         try:
             update_info = await loop.run_in_executor(None, updater.check_for_update)
@@ -221,20 +225,47 @@ class AppController(MainController):
 
         progress = make_download_progress_dialog(self.window)
         progress.show()
+
+        def on_progress(downloaded, total):
+            # Called from the download thread
+            if total:
+                loop.call_soon_threadsafe(progress.setValue, int(downloaded * 100 / total))
+
         try:
-            new_exe_path = await loop.run_in_executor(
-                None, updater.download_update, update_info.download_url
+            downloaded_path = await loop.run_in_executor(
+                None, updater.download_update, update_info, on_progress
             )
+            exe_path = updater.apply_update(downloaded_path, update_info.version)
         except Exception as exc:
             progress.close()
-            logger.warning(f"Update download failed: {exc}")
+            logger.warning(f"Update failed: {exc}")
             show_update_failed_dialog(self.window, str(exc))
             return
 
         progress.close()
-        install_target = sys.executable if getattr(sys, "frozen", False) else None
-        updater.launch_downloaded_exe(new_exe_path, install_target=install_target)
+        await self.shutdown_for_update()
+        updater.relaunch(exe_path)
         QApplication.quit()
+
+    async def shutdown_for_update(self):
+        """Releases the Telegram session so the new instance can open it."""
+        try:
+            if self.client.is_connected():
+                await self.client.disconnect()
+        except Exception as exc:
+            logger.warning(f"Telegram disconnect before update failed: {exc}")
+
+
+async def finish_legacy_update(controller, install_target):
+    loop = asyncio.get_event_loop()
+    installed = await loop.run_in_executor(
+        None, updater.install_self_over, install_target
+    )
+    if not installed:
+        return
+    await controller.shutdown_for_update()
+    updater.relaunch(install_target, cleanup_path=sys.executable)
+    QApplication.quit()
 
 
 def main():
@@ -260,7 +291,11 @@ def main():
 
     install_target = updater.get_pending_install_target(sys.argv)
     if install_target:
-        loop.run_in_executor(None, updater.install_self_over, install_target)
+        # Launched from %TEMP% by a version <= 6.4.1: install over the original
+        # exe, then restart from there and let it delete this temp copy
+        loop.create_task(finish_legacy_update(controller, install_target))
+    else:
+        loop.run_in_executor(None, updater.cleanup_leftovers, sys.argv)
 
     with loop:
         loop.run_forever()

@@ -43,8 +43,8 @@ async def show_update_available_dialog(
 
 
 def make_download_progress_dialog(parent) -> QProgressDialog:
-    """Indeterminate progress dialog shown while the update is downloading."""
-    dialog = QProgressDialog("Downloading update...", None, 0, 0, parent)
+    """Progress dialog (0-100%) shown while the update is downloading."""
+    dialog = QProgressDialog("Downloading update...", None, 0, 100, parent)
     dialog.setWindowTitle("Updating")
     dialog.setWindowModality(Qt.WindowModal)
     dialog.setCancelButton(None)
